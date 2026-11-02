@@ -172,10 +172,10 @@ kd-tree-learning-judge/
 kd-tree-learning-judge/          # ジャッジサーバ上の clone
   submissions/                   # .gitignore 対象
     alice/
-    00012.py      # 提出されたコード（受付時に保存。以後書き換えない）
-    00012.json    # 判定結果（判定完了時に書く）
-    00031.py
-    00031.json
+      00012.py      # 提出されたコード（受付時に保存。以後書き換えない）
+      00012.json    # 判定結果（判定完了時に書く）
+      00031.py
+      00031.json
     bob/
       00015.py
       00015.json
