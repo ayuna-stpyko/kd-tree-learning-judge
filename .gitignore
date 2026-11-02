@@ -1,0 +1,8 @@
+# 提出コードと DB（ジャッジサーバ上でのみ保持）
+submissions/
+data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
