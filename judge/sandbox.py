@@ -12,7 +12,9 @@ import sys
 from .config import ROOT
 
 RUNNER = os.path.join(ROOT, "sandbox", "runner.py")
-NOBODY = 65534
+NOBODY_UID = 65534  # 提出コードを動かすユーザ (nobody)
+PIDS_LIMIT = 64  # コンテナ内のプロセス・スレッド数の上限 (fork 爆弾対策)
+TMPFS_MB = 64  # 提出コードの作業ディレクトリ /tmp の大きさ
 
 
 class Run:
@@ -54,8 +56,8 @@ def start(cfg, work, names, cpu, tag):
             "--network", "none",
             "--cpuset-cpus", cpu, "--cpus", "1",
             "--memory", "%dm" % p.memory_mb, "--memory-swap", "%dm" % p.memory_mb,
-            "--pids-limit", "64",
-            "--read-only", "--tmpfs", "/tmp:rw,size=64m,mode=1777",
+            "--pids-limit", str(PIDS_LIMIT),
+            "--read-only", "--tmpfs", "/tmp:rw,size=%dm,mode=1777" % TMPFS_MB,
             "--cap-drop", "ALL", "--cap-add", "SETUID", "--cap-add", "SETGID", "--cap-add", "KILL",
             "--security-opt", "no-new-privileges",
             "--user", "0:0",
@@ -66,7 +68,7 @@ def start(cfg, work, names, cpu, tag):
             cfg.image,
             cfg.interpreter, "/runner/runner.py",
             "--src", "/sub/main.py", "--cases", "/cases", "--out", "/out", "--workdir", "/tmp",
-            "--interp", cfg.interpreter, "--drop-uid", str(NOBODY),
+            "--interp", cfg.interpreter, "--drop-uid", str(NOBODY_UID),
         ] + common + ["--"] + names
     else:
         container = None

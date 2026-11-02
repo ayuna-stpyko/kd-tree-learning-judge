@@ -24,23 +24,40 @@ import sys
 import threading
 import time
 
+MB = 1024 * 1024
+OOM_SCORE_ADJ_MAX = 1000  # OOM killer に最優先で選ばせる値
+COMPILE_TIMEOUT_SEC = 10
+EXIT_COMPILE_ERROR = 3  # 構文チェック用プロセスが構文エラーを知らせる終了コード
+COMPILE_MESSAGE_MAX_CHARS = 500
+STDERR_TAIL_BYTES = 4000  # ホストに返す stderr の末尾 (例外の型名を取り出すのに使う)
+
+
+def kill_group(pid):
+    """提出コードのプロセスグループ (子プロセスを含む) をまとめて止める。"""
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except OSError:
+        pass
+
 
 def emit(obj):
     sys.stdout.write(json.dumps(obj) + "\n")
     sys.stdout.flush()
 
 
+# 構文チェック用プロセスのコード。引数: ファイル, 構文エラーのときの終了コード
 COMPILE_CHECK = r"""
 import sys
+EXIT_COMPILE_ERROR = int(sys.argv[2])
 try:
     with open(sys.argv[1], "rb") as f:
         compile(f.read(), "main.py", "exec")
 except SyntaxError as e:
     sys.stderr.write("%s: %s (line %s)" % (type(e).__name__, e.msg, e.lineno))
-    sys.exit(3)
+    sys.exit(EXIT_COMPILE_ERROR)
 except (ValueError, UnicodeDecodeError) as e:
     sys.stderr.write("%s: %s" % (type(e).__name__, e))
-    sys.exit(3)
+    sys.exit(EXIT_COMPILE_ERROR)
 """
 
 
@@ -50,7 +67,7 @@ def make_preexec(args, fsize=None):
         # メモリ不足のときは runner ではなく提出コードの方が OOM killer に選ばれるようにする
         try:
             with open("/proc/self/oom_score_adj", "w") as f:
-                f.write("1000")
+                f.write(str(OOM_SCORE_ADJ_MAX))
         except OSError:
             pass
         if fsize is not None:
@@ -69,19 +86,19 @@ MEMORY = object()  # 構文チェック中にメモリ上限で止められた
 def check_compile(args):
     """構文チェック。コンパイル時の定数畳み込み (例: b"a" * 10**10) で runner 自身が
     メモリを使い切らないよう、権限を落とした別プロセスで行う。"""
-    p = subprocess.Popen([args.interp, "-c", COMPILE_CHECK, args.src], stdin=subprocess.DEVNULL,
+    p = subprocess.Popen([args.interp, "-c", COMPILE_CHECK, args.src, str(EXIT_COMPILE_ERROR)], stdin=subprocess.DEVNULL,
                          stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, preexec_fn=make_preexec(args),
                          close_fds=True, cwd=args.workdir)
     try:
-        _, err = p.communicate(timeout=10)
+        _, err = p.communicate(timeout=COMPILE_TIMEOUT_SEC)
     except subprocess.TimeoutExpired:
-        os.killpg(p.pid, signal.SIGKILL)
+        kill_group(p.pid)
         p.communicate()
         return "compile check timed out"
     if p.returncode == 0:
         return None
-    if p.returncode == 3:
-        return err.decode("utf-8", "replace")[:500]
+    if p.returncode == EXIT_COMPILE_ERROR:
+        return err.decode("utf-8", "replace")[:COMPILE_MESSAGE_MAX_CHARS]
     if p.returncode == -signal.SIGKILL:
         return MEMORY
     return "compile check failed (exit %s)" % p.returncode
@@ -91,7 +108,7 @@ def run_case(args, name):
     inp = open(os.path.join(args.cases, name + ".in"), "rb")
     out = open(os.path.join(args.out, name + ".out"), "wb")
     err = open(os.path.join(args.out, name + ".err"), "wb")
-    fsize = args.output_limit_mb * 1024 * 1024
+    fsize = args.output_limit_mb * MB
     pre = make_preexec(args, fsize)
 
     timed_out = [False]
@@ -101,10 +118,7 @@ def run_case(args, name):
 
     def kill():
         timed_out[0] = True
-        try:
-            os.killpg(p.pid, signal.SIGKILL)
-        except OSError:
-            pass
+        kill_group(p.pid)
 
     timer = threading.Timer(args.time_limit, kill)
     timer.start()
@@ -113,17 +127,14 @@ def run_case(args, name):
     elapsed = time.perf_counter() - t0
     timer.cancel()
     p.returncode = 0  # Popen 側で再度 wait しないようにする
-    try:
-        os.killpg(p.pid, signal.SIGKILL)  # 子プロセスが残っていれば片付ける
-    except OSError:
-        pass
+    kill_group(p.pid)  # 子プロセスが残っていれば片付ける
     for f in (inp, out, err):
         f.close()
 
     with open(os.path.join(args.out, name + ".err"), "rb") as f:
         f.seek(0, 2)
         size = f.tell()
-        f.seek(max(0, size - 4000))
+        f.seek(max(0, size - STDERR_TAIL_BYTES))
         tail = f.read().decode("utf-8", "replace")
 
     return {

@@ -11,10 +11,15 @@ import os
 import sys
 import time
 import urllib.error
+from http import HTTPStatus
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SUB = os.path.join(ROOT, "tests", "submissions")
+
+DEFAULT_URL = "http://127.0.0.1:8000"
+HTTP_TIMEOUT_SEC = 30
+POLL_SEC = 1
 
 EXPECT = [
     ("ac", os.path.join(ROOT, "problems", "kdtree-nn", "reference.py"), "AC"),
@@ -33,15 +38,17 @@ def call(url, data=None):
     req = urllib.request.Request(url, data=json.dumps(data).encode() if data is not None else None,
                                  headers={"Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SEC) as r:
             return r.status, json.loads(r.read().decode())
     except urllib.error.HTTPError as e:
         return e.code, json.loads(e.read().decode())
+    except urllib.error.URLError as e:
+        sys.exit("ジャッジに接続できません (%s): %s" % (url, e.reason))
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--url", default="http://127.0.0.1:8000")
+    ap.add_argument("--url", default=DEFAULT_URL)
     ap.add_argument("--skip", default="", help="省略する項目 (カンマ区切り。例: mle,mlec)")
     args = ap.parse_args()
     skip = set(x for x in args.skip.split(",") if x)
@@ -65,7 +72,7 @@ def main():
             _, st = call("%s/api/submissions/%d" % (args.url, sid))
             if st["status"] == "done":
                 break
-            time.sleep(1)
+            time.sleep(POLL_SEC)
         good = st["verdict"] == exp
         ok &= good
         extra = ""
@@ -84,7 +91,7 @@ def main():
     # 連続提出の制限
     first = next(k for k, _, _ in EXPECT if k not in skip)
     code, res = call(args.url + "/api/submit", {"name": "_selftest_%s_%s" % (first, tag), "source": "print(1)\n"})
-    good = code == 429
+    good = code == HTTPStatus.TOO_MANY_REQUESTS
     ok &= good
     print("%s rate limit -> %s %s" % ("OK  " if good else "FAIL", code, res.get("error")))
     sys.exit(0 if ok else 1)

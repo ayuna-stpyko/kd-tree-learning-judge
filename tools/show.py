@@ -7,61 +7,70 @@
 """
 import json
 import os
-import sqlite3
 import sys
-import time
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB = os.path.join(ROOT, "data", "judge.db")
-SUBS = os.path.join(ROOT, "submissions")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from judge import config  # noqa: E402
+from judge.common import SHORT_DATETIME_FMT, fmt_time, load_result, submission_path  # noqa: E402
+from judge.db import DB  # noqa: E402
+
+SUBMISSIONS_DIR = os.path.join(config.ROOT, "submissions")
 
 
-def fmt_time(t):
-    return time.strftime("%m/%d %H:%M:%S", time.localtime(t))
+def fmt_score(score):
+    return "%.3f" % score if score is not None else "-"
+
+
+def show_names(db):
+    print("%-20s %6s %10s  %s" % ("名前", "提出数", "最良", "最終提出"))
+    for r in db.summary_by_name():
+        print("%-20s %6d %10s  %s" % (r["name"], r["n"], fmt_score(r["best"]),
+                                      fmt_time(r["last"], SHORT_DATETIME_FMT)))
+
+
+def show_submissions(db, name):
+    rows = db.by_name(name)
+    if not rows:
+        sys.exit("%s の提出はありません" % name)
+    print("%6s  %-15s %-8s %-4s %10s  %s" % ("ID", "時刻", "状態", "判定", "スコア", "失敗したケース"))
+    for r in rows:
+        res = load_result(r)
+        f = res.get("failed")
+        where = "%s #%d (d=%d)" % (f["phase"], f["index"], f["d"]) if f else ""
+        if res.get("message"):
+            where += " " + res["message"]
+        print("%6d  %-15s %-8s %-4s %10s  %s" % (r["id"], fmt_time(r["created_at"], SHORT_DATETIME_FMT),
+                                                r["status"], r["verdict"] or "-", fmt_score(r["score"]), where))
+
+
+def show_one(name, sid):
+    for ext in ("py", "json"):
+        path = submission_path(SUBMISSIONS_DIR, name, sid, ext)
+        print("=" * 20, path)
+        if not os.path.exists(path):
+            print("(まだ判定が終わっていません)" if ext == "json" else "(ファイルがありません)")
+            continue
+        with open(path, encoding="utf-8", errors="replace") as f:
+            if ext == "py":
+                print(f.read())
+            else:
+                data = json.load(f)
+                data.pop("cases", None)
+                print(json.dumps(data, ensure_ascii=False, indent=1))
 
 
 def main():
-    if not os.path.exists(DB):
-        sys.exit("まだ提出がありません (%s が無い)" % DB)
-    c = sqlite3.connect(DB)
-    c.row_factory = sqlite3.Row
+    path = config.db_path()
+    if not os.path.exists(path):
+        sys.exit("まだ提出がありません (%s が無い)" % path)
     args = sys.argv[1:]
     if not args:
-        rows = c.execute("SELECT name, COUNT(*) AS n, MIN(CASE WHEN verdict='AC' THEN score END) AS best, "
-                         "MAX(created_at) AS last FROM submissions GROUP BY name ORDER BY name").fetchall()
-        print("%-20s %6s %10s  %s" % ("名前", "提出数", "最良", "最終提出"))
-        for r in rows:
-            best = "%.3f" % r["best"] if r["best"] is not None else "-"
-            print("%-20s %6d %10s  %s" % (r["name"], r["n"], best, fmt_time(r["last"])))
+        show_names(DB(path))
     elif len(args) == 1:
-        rows = c.execute("SELECT * FROM submissions WHERE name=? ORDER BY id", (args[0],)).fetchall()
-        if not rows:
-            sys.exit("%s の提出はありません" % args[0])
-        print("%6s  %-15s %-8s %-4s %10s  %s" % ("ID", "時刻", "状態", "判定", "スコア", "失敗したケース"))
-        for r in rows:
-            res = json.loads(r["result"]) if r["result"] else {}
-            f = res.get("failed")
-            where = "%s #%d (d=%d)" % (f["phase"], f["index"], f["d"]) if f else ""
-            if res.get("message"):
-                where += " " + res["message"]
-            score = "%.3f" % r["score"] if r["score"] is not None else "-"
-            print("%6d  %-15s %-8s %-4s %10s  %s" % (r["id"], fmt_time(r["created_at"]), r["status"],
-                                                    r["verdict"] or "-", score, where))
+        show_submissions(DB(path), args[0])
     else:
-        name, sid = args[0], int(args[1])
-        py = os.path.join(SUBS, name, "%05d.py" % sid)
-        js = os.path.join(SUBS, name, "%05d.json" % sid)
-        print("=" * 20, py)
-        with open(py, encoding="utf-8", errors="replace") as f:
-            print(f.read())
-        print("=" * 20, js)
-        if os.path.exists(js):
-            with open(js, encoding="utf-8") as f:
-                d = json.load(f)
-            d.pop("cases", None)
-            print(json.dumps(d, ensure_ascii=False, indent=1))
-        else:
-            print("(まだ判定が終わっていません)")
+        show_one(args[0], int(args[1]))
 
 
 if __name__ == "__main__":

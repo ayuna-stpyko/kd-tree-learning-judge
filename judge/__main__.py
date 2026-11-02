@@ -30,7 +30,7 @@ def main():
 
     log.info("problem: %s (%d cases, N*D <= %d, TL %.1fs)", cfg.problem.title, len(cfg.problem.cases),
              cfg.problem.max_nd, cfg.problem.time_limit)
-    database = db.DB(os.path.join(cfg.data_dir, "judge.db"))
+    database = db.DB(cfg.db_path, recover=True)
     workers = worker.Workers(cfg, database)
     workers.start()
     server.serve(cfg, database, workers)
