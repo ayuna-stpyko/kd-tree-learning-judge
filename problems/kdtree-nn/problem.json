@@ -1,0 +1,7 @@
+{
+  "title": "kd-tree: 最近傍点",
+  "time_limit_sec": 2.0,
+  "memory_limit_mb": 1024,
+  "output_limit_mb": 16,
+  "max_nd": 200000
+}

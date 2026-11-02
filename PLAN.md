@@ -112,7 +112,8 @@ D = 1〜10 のそれぞれについて、次のようなケースを用意する
 - `validator.py`: 入力が制約を満たすかを確認する。重複点の数や、距離が同じ点がどれくらいあるかも集計し、意図どおりのケースになっているかを見る
 - `reference.py`: 参照解（kd-tree）。PyPy で計測し、制約を決める基準にする
 - `brute.py`: 全探索解。正解の出力を作るのに使い、参照解と全ケースで一致することを確認する。スコア用で TLE になることも確認する
-- テストケース（`.in` / `.out`）は事前に生成してリポジトリにコミットする
+- `make_tests.py`: 上の 4 つを使ってテストケース（`.in` / `.out`）を生成する。乱数シードはケース名から決まるので、同じ設定なら毎回同じ内容になる
+- テストケースはリポジトリにコミットせず（`.gitignore`）、ジャッジサーバで生成する。Q の調整で作り直すことが多いため
 
 ---
 
@@ -128,32 +129,33 @@ D = 1〜10 のそれぞれについて、次のようなケースを用意する
 [10.24.*.* のブラウザ] ──▶ 順位表
 ```
 
-- 技術スタック: Python 最新版、FastAPI + uvicorn、SQLite、Docker
+- 技術スタック: Python の標準ライブラリのみ（`http.server`、`sqlite3`、`threading`）、Docker。Ubuntu 22.04 の python3（3.10）でそのまま動き、pip が要らない
 - サンドボックスのイメージ: 公式の `pypy:3-slim` 系の最新版（外部ライブラリは入れない）
 
-### リポジトリ構成（予定）
+### リポジトリ構成
 ```
 kd-tree-learning-judge/
-  PLAN.md
-  server/
-    app.py            # API・順位表
-    db.py
-    worker.py         # キューから提出を取り出して判定する
+  PLAN.md  README.md（運営者向けの手順）
+  judge/              # python3 -m judge で起動
+    server.py         # HTTP: 提出の受付・結果・順位表
+    worker.py         # 待ち行列から取り出して判定する
     sandbox.py        # Docker の起動・後始末
-    templates/leaderboard.html
+    db.py             # SQLite
+    leaderboard.py    # 順位表の HTML
+    config.py
   sandbox/
-    Dockerfile        # PyPy、実行用ユーザ
+    Dockerfile        # PyPy の公式イメージ
     runner.py         # コンテナ内で各ケースを実行し、時間を計測する
   problems/kdtree-nn/
-    problem.toml      # 制限時間、ケース一覧（正誤判定用/スコア用の区別、次元）
-    tests/correctness/*.in *.out
-    tests/score/d01.in d01.out ... d10.in d10.out
-    gen.py validator.py reference.py brute.py
-  tools/              # 生成・検証・参照解の計測スクリプト
-  deploy/             # setup.sh（初回セットアップ）、systemd ユーザサービスのユニット、ufw 設定
+    problem.json      # 制限時間、メモリ・出力の上限、N×D の上限
+    gen.py validator.py reference.py brute.py make_tests.py
+    tests/            # 生成物（.gitignore）。correctness/*.in|.out、score/dNN.in|.out、manifest.json
+  tests/submissions/  # selftest 用の提出（WA、TLE、RE、CE、OLE、MLE、正解の盗み見）
+  tools/              # selftest.py show.py rejudge.py bench_size.py
+  deploy/             # setup.sh（初回セットアップ）、systemd ユーザサービスのユニット
   start.sh stop.sh    # 起動・停止
-  .gitignore          # submissions/ と data/ を除外
-  config.toml         # ワーカー数、使うコア、提出間隔の制限など
+  config.example.ini  # 設定の雛形。config.ini にコピーして使う（.gitignore）
+  .gitignore          # submissions/ data/ config.ini problems/*/tests/ を除外
 ```
 
 ---
