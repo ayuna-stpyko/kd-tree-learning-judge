@@ -1,0 +1,14 @@
+# 提出コードと DB（ジャッジサーバ上でのみ保持）
+/submissions/
+/data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# 生成したテストケース (make_tests.py で作る)
+problems/*/tests/
+
+# 設定 (config.example.ini をコピーして作る)
+config.ini
