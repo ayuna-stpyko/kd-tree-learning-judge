@@ -152,7 +152,6 @@ kd-tree-learning-judge/
     tests/            # 生成物（.gitignore）。correctness/*.in|.out、score/dNN.in|.out、manifest.json
   tests/submissions/  # selftest 用の提出（WA、TLE、RE、CE、OLE、MLE、正解の盗み見）
   tools/              # selftest.py show.py rejudge.py bench_size.py
-  deploy/             # setup.sh（初回セットアップ）、systemd ユーザサービスのユニット
   start.sh stop.sh    # 起動・停止
   config.example.ini  # 設定の雛形。config.ini にコピーして使う（.gitignore）
   .gitignore          # submissions/ data/ config.ini problems/*/tests/ を除外
@@ -250,7 +249,7 @@ Docker の主な設定:
 
 - ワーカー 2 個はハイパースレッディングで同じ物理コアの兄弟にならないように割り当てる。
 - 計測を安定させるための設定:
-  - CPU のクロック制御を `performance` に固定する（`cpupower frequency-set -g performance`）
+  - 必要なら CPU のクロック制御を `performance` に固定する（`cpupower frequency-set -g performance`。手動で行う）
   - 必要ならターボブーストを無効にする
   - 必要なら GRUB で `isolcpus=2,3` を設定し、ワーカー用のコアを OS のスケジューラから外す
 - Docker Engine は公式リポジトリから入れる。22.04 は cgroup v2 が標準なので、メモリや CPU の制限はそのまま使える。
@@ -263,16 +262,16 @@ Docker の主な設定:
 ### 運用の流れ
 運営者が自分のアカウントでこのリポジトリをジャッジサーバに clone し、そこから起動する。提出コードもその clone の中（`submissions/`）を直接見る。
 
-1. **初回だけ**（sudo が必要）: `deploy/setup.sh`
-   - Docker Engine のインストールと、運営者アカウントの `docker` グループへの追加
-   - `cpupower` の設定、ufw の設定
-   - サンドボックスのイメージをビルド
-2. **起動**: clone したディレクトリで `./start.sh`
+1. **初回だけ**（sudo が必要）: `sudo apt-get install -y docker.io` と `sudo usermod -aG docker $USER`
+   - Docker のインストールと、運営者アカウントの `docker` グループへの追加だけを行う
+   - ufw などは必要に応じて手動で設定する
+2. **起動**: clone したディレクトリで `./start.sh`（sudo は不要）
    - API サーバ（順位表を含む）とワーカー 2 個を、**運営者自身のアカウント**で起動する
-   - `submissions/` と `data/` は無ければ作る
-   - ターミナルを閉じても止まらないように、systemd のユーザサービス（`systemctl --user`）として動かす。ログは `journalctl --user` で見る
+   - サンドボックスのイメージ、テストケース、`submissions/` と `data/` は無ければ作る
+   - セッションから切り離したバックグラウンドのプロセス（`setsid nohup`）として動かすので、ターミナルや SSH を閉じても止まらない。マシンを再起動すると止まるので、そのときは `./start.sh` し直す
+   - ログは `data/judge.log`、PID は `data/judge.pid`
 3. **停止**: `./stop.sh`
-4. **ジャッジ側の更新**: `git pull` してから `./stop.sh && ./start.sh`
+4. **ジャッジ側の更新**: `git pull` してから `./start.sh`（動いていれば再起動する）
 
 ### 運用上の注意
 - プロセスが運営者のアカウントで動くので、`submissions/` と `data/` のファイルは運営者の所有になり、そのまま開ける（専用ユーザやグループの設定は不要）。

@@ -10,12 +10,7 @@
 ```bash
 git clone <このリポジトリ> kd-tree-learning-judge
 cd kd-tree-learning-judge
-sudo deploy/setup.sh
 ```
-
-`setup.sh` がやること: Docker のインストールと `docker` グループへの追加、ログアウト後もジャッジを動かすための `loginctl enable-linger`、サンドボックスのイメージ (`kdjudge-sandbox`、PyPy) のビルド、CPU クロックの `performance` 固定。
-
-終わったら一度ログアウトしてログインし直す (docker グループを有効にするため)。
 
 ## 起動・停止
 
@@ -23,8 +18,8 @@ sudo deploy/setup.sh
 ./start.sh
 ```
 
-- 初回は `config.ini` (`config.example.ini` のコピー) とテストケースを作ってから起動する。
-- systemd のユーザサービスとして動くので、ターミナルを閉じても止まらない。
+- 初回は `config.ini` (`config.example.ini` のコピー)、サンドボックスのイメージ (`kdjudge-sandbox`、PyPy)、テストケースを作ってから起動する。
+- バックグラウンドで動くので、ターミナルや SSH を閉じても止まらない。マシンを再起動すると止まるので、そのときは `./start.sh` し直す。
 - 動いていれば再起動する (`git pull` の後もこれでよい)。
 - `./start.sh --foreground` でターミナルで直接動かせる (Ctrl+C で停止)。
 
@@ -32,7 +27,7 @@ sudo deploy/setup.sh
 ./stop.sh
 ```
 
-ログは `journalctl --user -u kdjudge -f` で見る。
+ログは `tail -f data/judge.log` で見る。
 
 ## 動作確認
 
@@ -46,7 +41,7 @@ python3 tools/selftest.py
 
 | 項目 | 内容 |
 |---|---|
-| `[server] host` | 待ち受けるアドレス。10.24 側のインターフェースのアドレスにする |
+| `[server] host` | 待ち受けるアドレス (既定 `0.0.0.0`)。10.24 側のアドレスに絞ってもよい |
 | `[server] port` | ポート (既定 8000) |
 | `[server] allowed_networks` | 接続を許可するネットワーク (既定 `10.24.0.0/16, 127.0.0.0/8`) |
 | `[judge] backend` | `docker` (本番) / `local` (開発用。隔離なしでこのマシンの python で実行) |
@@ -100,5 +95,4 @@ sandbox/        Dockerfile と runner.py (コンテナ内で実行・時間計�
 problems/kdtree-nn/  問題設定・生成器・参照解・全探索解・validator
 tests/submissions/   selftest 用の提出
 tools/          selftest / show / rejudge / bench_size
-deploy/         setup.sh と systemd のユニット
 ```

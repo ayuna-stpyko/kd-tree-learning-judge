@@ -24,7 +24,7 @@ def main():
         r = subprocess.run(["docker", "image", "inspect", cfg.image], stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL)
         if r.returncode != 0:
-            sys.exit("Docker イメージ %s がありません。deploy/setup.sh を実行してください。" % cfg.image)
+            sys.exit("Docker イメージ %s がありません。./start.sh で作ってください。" % cfg.image)
     else:
         log.warning("backend=local: 提出コードを隔離せずに実行します (開発用)")
 

@@ -1,5 +1,6 @@
 # 提出コードを実行するサンドボックス。外部ライブラリ (numpy, scipy など) は入れない。
-# PyPy のバージョンを上げるときはタグを変えてビルドし直す (deploy/setup.sh)。
+# start.sh が無ければビルドする。PyPy のバージョンを上げるときはタグを変えて
+# docker build --pull -t kdjudge-sandbox sandbox でビルドし直す。
 ARG PYPY_TAG=3-slim
 FROM pypy:${PYPY_TAG}
 
