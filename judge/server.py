@@ -3,7 +3,8 @@
   POST /api/submit             {"name": ..., "source": ...} -> {"id": ...}
   GET  /api/submissions/<id>   判定の状態と結果
   GET  /api/leaderboard?view=best|all
-  GET  /?view=best|all         順位表 (HTML)
+  GET  /api/board?view=best|all|subs   順位表ページの差し替え部分 (表の HTML) と最近の提出
+  GET  /?view=best|all|subs    順位表 (HTML)
 
 提出コードそのものを返す API は無い (運営者はジャッジサーバ上の submissions/ を直接見る)。
 """
@@ -138,8 +139,12 @@ def make_handler(cfg, db, workers):
             if view not in leaderboard.VIEWS:
                 view = leaderboard.BEST
             if u.path == "/":
-                self.send(HTTPStatus.OK, leaderboard.render(cfg, leaderboard.rows(db, view), view), "text/html")
+                self.send(HTTPStatus.OK, leaderboard.render(cfg, db, view), "text/html")
+            elif u.path == "/api/board":
+                self.send_json(leaderboard.board(db, view))
             elif u.path == "/api/leaderboard":
+                if view == leaderboard.SUBS:
+                    view = leaderboard.BEST
                 self.send_json({"view": view, "rows": leaderboard.rows(db, view)})
             elif u.path.startswith("/api/submissions/"):
                 sid = u.path.rsplit("/", 1)[1]

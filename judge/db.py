@@ -121,6 +121,17 @@ class DB:
         return self._rows("SELECT id, name, created_at, score, result FROM submissions "
                           "WHERE status=? AND verdict='AC' ORDER BY score, created_at", (DONE,))
 
+    def recent(self, limit, hidden_prefix):
+        """受付済みの提出を新しい順に limit 件 (hidden_prefix で始まる名前は除く)。待機中なら前の件数も付ける。"""
+        rows = self._rows("SELECT id, name, created_at, status, verdict, score, progress FROM submissions "
+                          "WHERE status!=? AND substr(name, 1, ?)!=? ORDER BY id DESC LIMIT ?",
+                          (NEW, len(hidden_prefix), hidden_prefix, limit))
+        queued = [r["id"] for r in self._rows("SELECT id FROM submissions WHERE status=? ORDER BY id", (QUEUED,))]
+        for r in rows:
+            if r["status"] == QUEUED:
+                r["queue_ahead"] = queued.index(r["id"])
+        return rows
+
     def counts_by_name(self):
         return {r["name"]: r["n"] for r in self._rows("SELECT name, COUNT(*) AS n FROM submissions GROUP BY name")}
 

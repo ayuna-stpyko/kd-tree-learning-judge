@@ -18,6 +18,7 @@ VERDICT_NAMES = {
 CORRECTNESS = "correctness"
 SCORE = "score"
 PHASES = (CORRECTNESS, SCORE)
+PHASE_NAMES = {CORRECTNESS: "正誤判定", SCORE: "スコア計測"}
 
 NAME_MAX_LEN = 32
 NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,%d}$" % NAME_MAX_LEN)
