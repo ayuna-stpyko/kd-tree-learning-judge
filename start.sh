@@ -26,16 +26,21 @@ if [ "$(cfg judge backend)" = "docker" ]; then
   fi
 fi
 
-PROBLEM_DIR="$(cfg judge problem)"
-if [ ! -f "$PROBLEM_DIR/tests/manifest.json" ]; then
-  echo "テストケースを生成します ($PROBLEM_DIR/tests)..."
-  if [ "$(cfg judge backend)" = "docker" ]; then
-    # PyPy で生成すると速い
-    docker run --rm --user "$(id -u):$(id -g)" -v "$REPO/$PROBLEM_DIR:/p" -w /p "$(cfg judge image)" pypy3 make_tests.py
-  else
-    python3 "$PROBLEM_DIR/make_tests.py"
+# テストケースが無い問題だけ生成する (作り直すときは problems/<問題>/tests を消してから起動する)
+IFS=', ' read -r -a PROBLEM_DIRS <<< "$(cfg judge problems)"
+for PROBLEM_DIR in "${PROBLEM_DIRS[@]}"; do
+  [ -n "$PROBLEM_DIR" ] || continue
+  if [ ! -f "$PROBLEM_DIR/tests/manifest.json" ]; then
+    echo "テストケースを生成します ($PROBLEM_DIR/tests)..."
+    if [ "$(cfg judge backend)" = "docker" ]; then
+      # PyPy で生成すると速い
+      docker run --rm --user "$(id -u):$(id -g)" -v "$REPO/problems:/problems" -w / "$(cfg judge image)" \
+        pypy3 problems/lib/make_tests.py "$PROBLEM_DIR"
+    else
+      python3 problems/lib/make_tests.py "$PROBLEM_DIR"
+    fi
   fi
-fi
+done
 
 mkdir -p data submissions
 

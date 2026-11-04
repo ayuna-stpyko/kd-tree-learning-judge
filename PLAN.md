@@ -114,6 +114,18 @@ D = 1〜10 のそれぞれについて、次のようなケースを用意する
 - `brute.py`: 全探索解。正解の出力を作るのに使い、参照解と全ケースで一致することを確認する。スコア用で TLE になることも確認する
 - `make_tests.py`: 上の 4 つを使ってテストケース（`.in` / `.out`）を生成する。乱数シードはケース名から決まるので、同じ設定なら毎回同じ内容になる
 - テストケースはリポジトリにコミットせず（`.gitignore`）、ジャッジサーバで生成する。Q の調整で作り直すことが多いため
+- これらは `problems/lib/` に置き、練習問題と共通で使う（`problem.json` の `dims`・`metric`・`ranked` で作るケースが変わる）
+
+### 練習問題（順位表に載せない）
+kd-tree の前段の練習として、判定だけを返す問題を 2 つ置く。入出力・番号の決め方は本問題と同じ。
+| ID | 内容 | 想定解 |
+|---|---|---|
+| `nn-1d` | D = 1 | ソートして両隣を見る。O(N log N) |
+| `nn-2d-l1` | D = 2、距離はマンハッタン距離 \|dx\| + \|dy\| | O(N log N)（kd-tree など） |
+
+- ケースは正誤判定用のみ。本問題と同じ境界ケースを 3 通りのシードで作り、大きいケース（N = 2×10^5 / D、Q = N。一様・クラスタ・ソート済み・一直線）を加える。
+- 大きいケースで全探索 O(NQ) は TLE、参照解（kd-tree）は 0.5 秒程度（PyPy）。
+- 提出のカードと「提出状況」には問題名を付けて出すが、順位表には載せない。提出間隔の制限は問題をまたいで共通。
 
 ---
 
@@ -146,9 +158,9 @@ kd-tree-learning-judge/
   sandbox/
     Dockerfile        # PyPy の公式イメージ
     runner.py         # コンテナ内で各ケースを実行し、時間を計測する
-  problems/kdtree-nn/
-    problem.json      # 制限時間、メモリ・出力の上限、N×D の上限
-    gen.py validator.py reference.py brute.py make_tests.py
+  problems/lib/       # gen.py validator.py reference.py brute.py make_tests.py（全問題で共通）
+  problems/kdtree-nn/ # 本問題。nn-1d/ nn-2d-l1/ は練習問題
+    problem.json      # 次元・距離・順位表に載るか、制限時間、メモリ・出力の上限、N×D の上限
     tests/            # 生成物（.gitignore）。correctness/*.in|.out、score/dNN.in|.out、manifest.json
   tests/submissions/  # selftest 用の提出（WA、TLE、RE、CE、OLE、MLE、正解の盗み見）
   tools/              # selftest.py show.py rejudge.py bench_size.py

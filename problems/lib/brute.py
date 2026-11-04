@@ -1,8 +1,15 @@
-"""全探索解 O(QND)。正解の検算と、スコア用ケースで TLE になることの確認に使う。"""
+"""全探索解 O(QND)。正解の検算と、大きいケースで TLE になることの確認に使う。
+
+metric: "l2" (ユークリッド距離。比べるのは二乗距離) か "l1" (マンハッタン距離)。
+提出として実行したときは METRIC を使う。
+"""
 import sys
 
+METRIC = "l2"
 
-def nearest_brute(X, d, n, qi):
+
+def nearest_brute(X, d, n, qi, metric=METRIC):
+    l1 = metric == "l1"
     base = qi * d
     q = X[base:base + d]
     bd = -1
@@ -14,7 +21,7 @@ def nearest_brute(X, d, n, qi):
         s = 0
         for j in range(d):
             t = X[o + j] - q[j]
-            s += t * t
+            s += (t if t >= 0 else -t) if l1 else t * t
         if bd < 0 or s < bd:  # 番号の小さい順に見るので、同じ距離なら先に見つけた方が残る
             bd, bi = s, p
     return bi

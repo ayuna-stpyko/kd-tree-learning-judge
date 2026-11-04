@@ -43,9 +43,8 @@ class Run:
         return self.proc.returncode, err
 
 
-def start(cfg, work, names, cpu, tag):
-    """work: sub/main.py, cases/*.in, out/ を持つ作業ディレクトリ。"""
-    p = cfg.problem
+def start(cfg, p, work, names, cpu, tag):
+    """p: 問題。work: sub/main.py, cases/*.in, out/ を持つ作業ディレクトリ。"""
     common = ["--time-limit", str(p.time_limit), "--output-limit-mb", str(p.output_limit_mb)]
     if cfg.backend == "docker":
         container = "kdjudge-%s" % tag

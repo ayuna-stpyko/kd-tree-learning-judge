@@ -1,0 +1,11 @@
+{
+  "title": "練習: 2 次元の最近傍点 (マンハッタン距離)",
+  "label": "2D L1",
+  "ranked": false,
+  "dims": [2],
+  "metric": "l1",
+  "time_limit_sec": 2.0,
+  "memory_limit_mb": 1024,
+  "output_limit_mb": 16,
+  "max_nd": 200000
+}

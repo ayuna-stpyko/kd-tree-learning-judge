@@ -1,8 +1,12 @@
 """参照解 (kd-tree)。提出と同じ形式で標準入出力を使う。
 
 make_tests.py からは build / nearest を import して正解の生成にも使う。
+metric: "l2" (ユークリッド距離。比べるのは二乗距離) か "l1" (マンハッタン距離)。
+提出として実行したときは METRIC を使う (tools/selftest.py は問題に合わせてこの行を書き換えて送る)。
 """
 import sys
+
+METRIC = "l2"
 
 LEAF = 8  # この個数以下の区間は分割せず、まとめて調べる
 AXIS_SAMPLES = 64  # 分割軸を選ぶとき、広がりを見るのに使う点の数
@@ -42,8 +46,9 @@ def build(X, n, d):
     return perm, axis
 
 
-def nearest(X, d, perm, axis, n, qi, stats=None):
+def nearest(X, d, perm, axis, n, qi, stats=None, metric=METRIC):
     """点 qi 以外で最も近い点の番号 (0-indexed)。同じ距離なら番号が最小のもの。"""
+    l1 = metric == "l1"
     base = qi * d
     q = X[base:base + d]
     bd = 1 << 62  # 二乗距離の最大値 (10 * (2 * 10**8)**2 = 4 * 10**17) より大きい
@@ -67,7 +72,7 @@ def nearest(X, d, perm, axis, n, qi, stats=None):
                     s = 0
                     for j in range(d):
                         t = X[o + j] - q[j]
-                        s += t * t
+                        s += (t if t >= 0 else -t) if l1 else t * t
                     if s < bd or (s == bd and p < bi):
                         bd, bi = s, p
                 break
@@ -79,17 +84,19 @@ def nearest(X, d, perm, axis, n, qi, stats=None):
                 s = 0
                 for j in range(d):
                     t = X[o + j] - q[j]
-                    s += t * t
+                    s += (t if t >= 0 else -t) if l1 else t * t
                 if s < bd or (s == bd and p < bi):
                     bd, bi = s, p
             a = axis[mid]
             diff = q[a] - X[o + a]
+            # 反対側の点までの距離の下限 (分割面までの距離)
+            bound = (diff if diff >= 0 else -diff) if l1 else diff * diff
             # 同じ座標の点は分割面の左右どちらにも入りうるので、diff == 0 でも反対側を残す
             if diff < 0:
-                stack.append((mid + 1, hi, diff * diff))
+                stack.append((mid + 1, hi, bound))
                 hi = mid
             else:
-                stack.append((lo, mid, diff * diff))
+                stack.append((lo, mid, bound))
                 lo = mid + 1
             if lb > bd:
                 break

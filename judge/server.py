@@ -1,6 +1,8 @@
 """HTTP サーバ: 提出の受付・結果の返却・順位表。
 
-  POST /api/submit             {"name": ..., "source": ...} -> {"id": ...}
+  POST /api/submit             {"name": ..., "problem": ..., "source": ...} -> {"id": ...}
+                               problem を省略すると順位表の問題 (kdtree-nn)
+  GET  /api/problems           問題の一覧
   GET  /api/submissions/<id>   判定の状態と結果
   GET  /api/leaderboard?view=best|all
   GET  /api/board?view=best|all|subs   順位表ページの差し替え部分 (表の HTML) と最近の提出
@@ -35,7 +37,7 @@ class BadRequest(Exception):
 
 def public_status(row):
     """回答者に返してよい情報だけにする (ケースの中身・stderr は返さない)。"""
-    out = {"id": row["id"], "name": row["name"], "status": row["status"],
+    out = {"id": row["id"], "name": row["name"], "problem": row["problem"], "status": row["status"],
            "submitted_at": fmt_time(row["created_at"])}
     if row["status"] == dbmod.QUEUED:
         out["queue_ahead"] = row.get("queue_ahead", 0)
@@ -59,14 +61,17 @@ def public_status(row):
 
 
 def parse_submission(cfg, raw):
-    """POST の本文を検査して (name, source のバイト列) を返す。"""
+    """POST の本文を検査して (name, problem, source のバイト列) を返す。"""
     try:
         body = json.loads(raw.decode("utf-8"))
         name, source = body["name"], body["source"]
-        if not isinstance(name, str) or not isinstance(source, str):
+        problem = body.get("problem", cfg.ranked.id)
+        if not isinstance(name, str) or not isinstance(source, str) or not isinstance(problem, str):
             raise ValueError
-    except (ValueError, KeyError, TypeError):
+    except (ValueError, KeyError, TypeError, AttributeError):
         raise BadRequest("リクエストが不正です")
+    if problem not in cfg.problems:
+        raise BadRequest("問題 %s はありません (%s)" % (problem, ", ".join(cfg.problems)))
     if not NAME_RE.match(name):
         raise BadRequest("名前は英数字と _ - のみ、%d 文字以内にしてください" % NAME_MAX_LEN)
     src = source.encode("utf-8")
@@ -74,21 +79,21 @@ def parse_submission(cfg, raw):
         raise BadRequest("ファイルが空です")
     if len(src) > cfg.max_source_bytes:
         raise BadRequest("ファイルが大きすぎます (上限 %d バイト)" % cfg.max_source_bytes)
-    return name, src
+    return name, problem, src
 
 
 def make_handler(cfg, db, workers):
     submit_lock = threading.Lock()  # 提出間隔の確認と登録をまとめて行う
 
-    def accept(name, src):
-        with submit_lock:
+    def accept(name, problem, src):
+        with submit_lock:  # 提出間隔は問題をまたいで名前ごとに数える
             last = db.last_submit_time(name)
             elapsed = time.time() - last if last is not None else None
             if elapsed is not None and elapsed < cfg.rate_limit_seconds:
                 wait = int(cfg.rate_limit_seconds - elapsed) + 1
                 raise BadRequest("あと %d 秒待ってから提出してください" % wait,
                                  HTTPStatus.TOO_MANY_REQUESTS, retry_after=wait)
-            sid = db.add(name)
+            sid = db.add(name, problem)
             try:
                 path = submission_path(cfg.submissions_dir, name, sid, "py")
                 os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -141,11 +146,13 @@ def make_handler(cfg, db, workers):
             if u.path == "/":
                 self.send(HTTPStatus.OK, leaderboard.render(cfg, db, view), "text/html")
             elif u.path == "/api/board":
-                self.send_json(leaderboard.board(db, view))
+                self.send_json(leaderboard.board(cfg, db, view))
             elif u.path == "/api/leaderboard":
                 if view == leaderboard.SUBS:
                     view = leaderboard.BEST
-                self.send_json({"view": view, "rows": leaderboard.rows(db, view)})
+                self.send_json({"view": view, "rows": leaderboard.rows(cfg, db, view)})
+            elif u.path == "/api/problems":
+                self.send_json([{"id": p.id, "title": p.title, "ranked": p.ranked} for p in cfg.problems.values()])
             elif u.path.startswith("/api/submissions/"):
                 sid = u.path.rsplit("/", 1)[1]
                 row = db.get(int(sid)) if sid.isdigit() else None
@@ -163,9 +170,9 @@ def make_handler(cfg, db, workers):
             length = self.headers.get("Content-Length", "")
             if not length.isdigit() or not 0 < int(length) <= MAX_BODY_BYTES:
                 raise BadRequest("リクエストが不正です")
-            name, src = parse_submission(cfg, self.rfile.read(int(length)))
-            sid = accept(name, src)
-            log.info("submission #%d from %s (%s)", sid, name, self.client_address[0])
+            name, problem, src = parse_submission(cfg, self.rfile.read(int(length)))
+            sid = accept(name, problem, src)
+            log.info("submission #%d from %s (%s, %s)", sid, name, problem, self.client_address[0])
             self.send_json({"id": sid})
 
     return Handler

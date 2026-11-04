@@ -1,13 +1,16 @@
-"""テストケースの定義と生成。
+"""テストケースの定義と生成 (全問題で共通)。
 
 ケースは名前から決まる乱数シードで生成するので、同じ C (N*D の上限) なら毎回同じ内容になる。
 点の生成関数はすべて (rng, n, d) -> 平らな座標リスト (長さ n*d)。
+
+- 順位表に載る問題 (ranked): 正誤判定用 + スコア用 (次元ごとに 1 ケース)
+- 練習問題 (ranked でない): 正誤判定用のみ。小さいケースを複数のシードで作り、
+  大きいケース (N = C/D, Q = N) も入れて全探索 O(NQ) が TLE になるようにする。
 """
 import random
 import zlib
 
 COORD = 10**8  # 座標の絶対値の上限 (問題の制約)
-MAX_D = 10
 
 # ---- 点の分布のパラメータ
 CLUSTER_COUNT = 64
@@ -85,7 +88,9 @@ def pts_line(rng, n, d):
     v = [0] * d
     while not any(v):
         v = [rng.randint(-LINE_DIR_MAX, LINE_DIR_MAX) for _ in range(d)]
-    step = rng.randint(1, LINE_STEP_MAX)
+    # 大きい N でも座標の上限を超えないように、間隔の上限を絞る (小さい N では LINE_STEP_MAX のまま)
+    step_max = min(LINE_STEP_MAX, (COORD - LINE_BASE_RANGE) // (n * max(map(abs, v))))
+    step = rng.randint(1, max(1, step_max))
     base = [rng.randint(-LINE_BASE_RANGE, LINE_BASE_RANGE) for _ in range(d)]
     ts = list(range(n))
     rng.shuffle(ts)  # 直線上の位置と番号の対応をばらばらにする
@@ -135,6 +140,16 @@ CORRECTNESS_SPEC = [
     ("mid", 5000, pts_mid, 2000),
 ]
 
+# 練習問題: 正誤判定用ケースを何通りのシードで作るか
+PRACTICE_SEEDS = "abc"
+# 練習問題の大きいケース: (種類, 点の生成)。N = C // D, Q = N (全点を 1 回ずつ)
+PRACTICE_LARGE_SPEC = [
+    ("big_uniform", pts_uniform),
+    ("big_cluster", pts_cluster),
+    ("big_sorted", pts_sorted),
+    ("big_line", pts_line),
+]
+
 DISTRIBUTIONS = {"uniform": pts_uniform, "cluster": pts_cluster, "lowdim": pts_lowdim}
 
 
@@ -145,14 +160,22 @@ def _case(d, n, points, q):
     return make_case
 
 
-def cases(C):
+def cases(C, dims, ranked):
     """[(phase, name, fn)]。fn(rng) -> (n, d, X(平らな座標リスト), queries(1-indexed))"""
     out = []
-    for d in range(1, MAX_D + 1):
+    seeds = [""] if ranked else ["_" + s for s in PRACTICE_SEEDS]
+    for d in dims:
         for kind, n_max, points, q_max in CORRECTNESS_SPEC:
             n = max(2, min(n_max, C // d))
-            out.append(("correctness", "c%02d_%s" % (d, kind), _case(d, n, points, q_max and min(n, q_max))))
-    for d in range(1, MAX_D + 1):
+            for seed in seeds:
+                out.append(("correctness", "c%02d_%s%s" % (d, kind, seed),
+                            _case(d, n, points, q_max and min(n, q_max))))
+    if not ranked:
+        for d in dims:
+            for kind, points in PRACTICE_LARGE_SPEC:
+                out.append(("correctness", "c%02d_%s" % (d, kind), _case(d, C // d, points, None)))
+        return out
+    for d in dims:
         dist, ratio = SCORE_SPEC[d]
         n = C // d
         out.append(("score", "d%02d" % d, _case(d, n, DISTRIBUTIONS[dist], max(1, min(n, int(n * ratio))))))

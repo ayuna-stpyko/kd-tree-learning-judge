@@ -1,6 +1,6 @@
 """入力ファイルが制約を満たすかを確認する。
 
-    python3 validator.py C FILE...
+    python3 validator.py C DIMS FILE...    (DIMS: 許す次元をカンマ区切り。例: 1,2)
 """
 import re
 import sys
@@ -9,7 +9,7 @@ COORD = 10**8
 INT = re.compile(rb"^-?(0|[1-9][0-9]*)$")
 
 
-def validate(data, C):
+def validate(data, C, dims):
     """問題がなければ統計の dict を返し、違反があれば ValueError を投げる。"""
     if not data.endswith(b"\n"):
         raise ValueError("末尾に改行がない")
@@ -24,7 +24,7 @@ def validate(data, C):
 
     n, d = ints(lines[pos], 2)
     pos += 1
-    if not (2 <= n and 1 <= d <= 10 and n * d <= C):
+    if not (2 <= n and d in dims and n * d <= C):
         raise ValueError("N, D が制約外: N=%d D=%d" % (n, d))
     pts = set()
     for _ in range(n):
@@ -49,11 +49,12 @@ def validate(data, C):
 
 def main():
     C = int(sys.argv[1])
+    dims = [int(x) for x in sys.argv[2].split(",")]
     ok = True
-    for path in sys.argv[2:]:
+    for path in sys.argv[3:]:
         try:
             with open(path, "rb") as f:
-                st = validate(f.read(), C)
+                st = validate(f.read(), C, dims)
             print(path, st)
         except ValueError as e:
             ok = False

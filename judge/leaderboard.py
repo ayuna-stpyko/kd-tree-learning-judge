@@ -1,8 +1,10 @@
 """順位表。スコア (スコア用ケースの実行時間の和) の昇順、同じなら提出が早い方が上。
 
+順位表に載るのは cfg.ranked の問題だけ。練習問題の提出は、提出状況とカードにだけ (問題名を付けて) 出す。
+
 view=best: 1 人 1 行 (各自の最良記録)
 view=all : AC した提出すべて
-view=subs: 最近の提出と判定の状況
+view=subs: 最近の提出と判定の状況 (全問題)
 
 ページは POLL_SEC ごとに /api/board を取り直し、表を差し替える。新しい提出は右側にカードで出し、
 判定が出たら結果を CARD_HOLD_SEC 秒表示してから引っ込める。
@@ -22,11 +24,11 @@ RECENT_LIMIT = 50  # 提出状況に出す件数
 MEDAL_RANKS = 3  # 上位何位まで色を付けるか
 
 
-def rows(db, view):
-    counts = db.counts_by_name()
+def rows(cfg, db, view):
+    counts = db.counts_by_name(cfg.ranked.id)
     out = []
     seen = set()
-    for r in db.accepted():  # score, created_at の昇順
+    for r in db.accepted(cfg.ranked.id):  # score, created_at の昇順
         if r["name"].startswith(HIDDEN_NAME_PREFIX):
             continue
         if view == BEST:
@@ -58,14 +60,17 @@ def status_text(s):
     return "判定中"
 
 
-def submissions(db):
-    """最近の提出 (新しい順)。判定済みの AC が本人の最良記録なら、その順位も付ける。"""
-    best_rank = {r["id"]: r["rank"] for r in rows(db, BEST)}
+def submissions(cfg, db):
+    """最近の提出 (新しい順)。判定済みの AC が本人の最良記録なら、その順位も付ける。
+    練習問題の提出には label (問題の短い名前) を付ける。"""
+    best_rank = {r["id"]: r["rank"] for r in rows(cfg, db, BEST)}
     out = []
     for r in db.recent(RECENT_LIMIT, HIDDEN_NAME_PREFIX):
         if r["progress"]:
             r["progress"] = json.loads(r["progress"])
+        p = cfg.problems.get(r["problem"])
         s = {"id": r["id"], "name": r["name"], "status": r["status"],
+             "label": None if p and p.ranked else (p.label if p else r["problem"]),
              "submitted_at": fmt_time(r["created_at"], SHORT_DATETIME_FMT)}
         if r["status"] == DONE:
             s.update(verdict=r["verdict"], verdict_name=VERDICT_NAMES.get(r["verdict"], r["verdict"]),
@@ -120,6 +125,9 @@ details summary { cursor: pointer; color: var(--accent); font-size: 12px; }
 .card.AC { border-left-color: var(--ac); } .card.ng { border-left-color: var(--ng); }
 .card .who { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card .who span { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 6px; }
+.tag { display: inline-block; font-size: 11px; font-weight: 600; color: var(--muted); border: 1px solid var(--line);
+       border-radius: 4px; padding: 0 5px; line-height: 16px; }
+.card .who .tag { margin-left: 6px; font-size: 11px; font-weight: 600; }
 .card .what { font-size: 13px; margin-top: 2px; font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) { .card, .card.out { transition: none; } tr.flash td { animation: none; } }
 """
@@ -147,10 +155,11 @@ _TIME = ("提出時刻", "", lambda r: r["submitted_at"])
 _COUNT = ("提出回数", "num", lambda r: str(r["submissions"]))
 _VERDICT = ("判定", "", _verdict_cell)
 _SUB_SCORE = ("スコア (秒)", "num", lambda s: "%.3f" % s["score"] if s.get("score") is not None else "")
+_PROBLEM = ("問題", "", lambda s: '<span class="tag">%s</span>' % html.escape(s["label"]) if s["label"] else "")
 COLUMNS = {
     BEST: [_RANK, _NAME, _SCORE, _DETAIL, _TIME, _COUNT],
     ALL: [_RANK, _NAME, _ID, _SCORE, _DETAIL, _TIME],
-    SUBS: [_ID, _TIME, _NAME, _VERDICT, _SUB_SCORE],
+    SUBS: [_ID, _TIME, _NAME, _PROBLEM, _VERDICT, _SUB_SCORE],
 }
 EMPTY = {BEST: "まだ AC した提出はありません。", ALL: "まだ AC した提出はありません。", SUBS: "まだ提出はありません。"}
 
@@ -176,10 +185,10 @@ def table(view, data):
     return '<div class="wrap"><table><thead><tr>%s</tr></thead><tbody>%s</tbody></table></div>' % (head, body)
 
 
-def board(db, view):
+def board(cfg, db, view):
     """ページの差し替え部分 (表の HTML) とカード用の提出一覧。/api/board の中身。"""
-    subs = submissions(db)
-    return {"html": table(view, subs if view == SUBS else rows(db, view)), "submissions": subs}
+    subs = submissions(cfg, db)
+    return {"html": table(view, subs if view == SUBS else rows(cfg, db, view)), "submissions": subs}
 
 
 SCRIPT = """
@@ -198,6 +207,7 @@ SCRIPT = """
   function what(s) {
     if (s.status !== "done") return s.text;
     if (s.verdict !== "AC") return s.verdict + " (" + s.verdict_name + ")";
+    if (s.score === null) return "AC (" + s.verdict_name + ")";
     return "AC  " + s.score.toFixed(3) + " 秒" + (s.rank ? "  " + s.rank + " 位" : "");
   }
   function cls(s) { return s.status !== "done" ? "" : s.verdict === "AC" ? "AC" : "ng"; }
@@ -212,7 +222,8 @@ SCRIPT = """
       requestAnimationFrame(function () { requestAnimationFrame(function () { el.classList.add("in"); }); });
     }
     c.el.className = "card in " + cls(s);
-    c.el.innerHTML = '<div class="who">' + esc(s.name) + "<span>#" + s.id + "</span></div>" +
+    c.el.innerHTML = '<div class="who">' + esc(s.name) + "<span>#" + s.id + "</span>" +
+                     (s.label ? '<span class="tag">' + esc(s.label) + "</span>" : "") + "</div>" +
                      '<div class="what">' + esc(what(s)) + "</div>";
     if (s.status === "done" && !c.done) {
       c.done = true;
@@ -262,7 +273,7 @@ SCRIPT = """
 def render(cfg, db, view):
     tabs = "".join('<a href="/?view=%s" class="%s">%s</a>' % (v, "on" if v == view else "", label)
                    for v, label in VIEWS.items())
-    dims = sorted(c["d"] for c in cfg.problem.cases if c["phase"] == SCORE)
+    dims = sorted(c["d"] for c in cfg.ranked.cases if c["phase"] == SCORE)
     return """<!doctype html>
 <html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -278,5 +289,5 @@ def render(cfg, db, view):
 <script>%(script)s</script>
 </body></html>
 """ % {"css": CSS, "dmin": dims[0], "dmax": dims[-1], "tabs": tabs,
-       "table": board(db, view)["html"],
+       "table": board(cfg, db, view)["html"],
        "script": SCRIPT % {"poll": POLL_SEC, "hold": CARD_HOLD_SEC, "view": json.dumps(view)}}

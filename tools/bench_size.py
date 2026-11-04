@@ -17,7 +17,7 @@ import random
 import sys
 import time
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "problems", "kdtree-nn"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "problems", "lib"))
 
 import brute  # noqa: E402
 import gen  # noqa: E402

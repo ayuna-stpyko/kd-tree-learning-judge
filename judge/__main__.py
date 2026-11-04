@@ -28,9 +28,10 @@ def main():
     else:
         log.warning("backend=local: 提出コードを隔離せずに実行します (開発用)")
 
-    log.info("problem: %s (%d cases, N*D <= %d, TL %.1fs)", cfg.problem.title, len(cfg.problem.cases),
-             cfg.problem.max_nd, cfg.problem.time_limit)
-    database = db.DB(cfg.db_path, recover=True)
+    for p in cfg.problems.values():
+        log.info("problem %s: %s (%d cases, N*D <= %d, TL %.1fs%s)", p.id, p.title, len(p.cases), p.max_nd,
+                 p.time_limit, ", 順位表" if p.ranked else "")
+    database = db.DB(cfg.db_path, recover=True, legacy_problem=cfg.ranked.id)
     workers = worker.Workers(cfg, database)
     workers.start()
     server.serve(cfg, database, workers)

@@ -17,6 +17,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS submissions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT NOT NULL,
+    problem     TEXT NOT NULL,
     created_at  REAL NOT NULL,
     status      TEXT NOT NULL,
     verdict     TEXT,
@@ -28,15 +29,22 @@ CREATE TABLE IF NOT EXISTS submissions (
 CREATE INDEX IF NOT EXISTS idx_status ON submissions(status, id);
 CREATE INDEX IF NOT EXISTS idx_name ON submissions(name, created_at);
 """
+INDEX_PROBLEM = "CREATE INDEX IF NOT EXISTS idx_problem ON submissions(problem, status, verdict)"
 
 
 class DB:
-    def __init__(self, path, recover=False):
-        """recover=True (ジャッジ本体の起動時): 前回の停止で中断された提出を片付ける。"""
+    def __init__(self, path, recover=False, legacy_problem=None):
+        """recover=True (ジャッジ本体の起動時): 表を作り、前回の停止で中断された提出を片付ける。
+        legacy_problem: problem 列が無かった頃の DB を移行するとき、既存の提出に入れる問題。"""
         self.path = path
         if recover:
             def f(c):
                 c.executescript(SCHEMA)
+                cols = [r["name"] for r in c.execute("PRAGMA table_info(submissions)")]
+                if "problem" not in cols:
+                    c.execute("ALTER TABLE submissions ADD COLUMN problem TEXT NOT NULL DEFAULT ''")
+                    c.execute("UPDATE submissions SET problem=?", (legacy_problem,))
+                c.execute(INDEX_PROBLEM)
                 # 判定中だったものは待機中に戻してやり直す
                 c.execute("UPDATE submissions SET status=?, progress=NULL WHERE status=?", (QUEUED, RUNNING))
                 # ファイルの保存の途中で止まった提出は消す
@@ -65,10 +73,10 @@ class DB:
         return self._run(lambda c: c.execute("SELECT MAX(created_at) FROM submissions WHERE name=?",
                                              (name,)).fetchone()[0])
 
-    def add(self, name):
+    def add(self, name, problem):
         # ファイルを保存し終えるまでは NEW にしておき、ワーカーに拾われないようにする
-        return self._run(lambda c: c.execute("INSERT INTO submissions(name, created_at, status) VALUES (?, ?, ?)",
-                                             (name, time.time(), NEW)).lastrowid)
+        return self._run(lambda c: c.execute("INSERT INTO submissions(name, problem, created_at, status) "
+                                             "VALUES (?, ?, ?, ?)", (name, problem, time.time(), NEW)).lastrowid)
 
     def enqueue(self, sid):
         self._exec("UPDATE submissions SET status=? WHERE id=?", (QUEUED, sid))
@@ -116,14 +124,15 @@ class DB:
             return d
         return self._run(f)
 
-    def accepted(self):
-        """AC の提出。スコアの昇順、同じなら提出が早い順。"""
+    def accepted(self, problem):
+        """problem の AC の提出。スコアの昇順、同じなら提出が早い順。"""
         return self._rows("SELECT id, name, created_at, score, result FROM submissions "
-                          "WHERE status=? AND verdict='AC' ORDER BY score, created_at", (DONE,))
+                          "WHERE problem=? AND status=? AND verdict='AC' ORDER BY score, created_at",
+                          (problem, DONE))
 
     def recent(self, limit, hidden_prefix):
         """受付済みの提出を新しい順に limit 件 (hidden_prefix で始まる名前は除く)。待機中なら前の件数も付ける。"""
-        rows = self._rows("SELECT id, name, created_at, status, verdict, score, progress FROM submissions "
+        rows = self._rows("SELECT id, name, problem, created_at, status, verdict, score, progress FROM submissions "
                           "WHERE status!=? AND substr(name, 1, ?)!=? ORDER BY id DESC LIMIT ?",
                           (NEW, len(hidden_prefix), hidden_prefix, limit))
         queued = [r["id"] for r in self._rows("SELECT id FROM submissions WHERE status=? ORDER BY id", (QUEUED,))]
@@ -132,13 +141,15 @@ class DB:
                 r["queue_ahead"] = queued.index(r["id"])
         return rows
 
-    def counts_by_name(self):
-        return {r["name"]: r["n"] for r in self._rows("SELECT name, COUNT(*) AS n FROM submissions GROUP BY name")}
+    def counts_by_name(self, problem):
+        return {r["name"]: r["n"] for r in self._rows("SELECT name, COUNT(*) AS n FROM submissions "
+                                                      "WHERE problem=? GROUP BY name", (problem,))}
 
     def summary_by_name(self):
-        """名前ごとの提出数・最良スコア・最終提出時刻。"""
-        return self._rows("SELECT name, COUNT(*) AS n, MIN(CASE WHEN verdict='AC' THEN score END) AS best, "
-                          "MAX(created_at) AS last FROM submissions GROUP BY name ORDER BY name")
+        """名前と問題ごとの提出数・AC 数・最良スコア・最終提出時刻。"""
+        return self._rows("SELECT name, problem, COUNT(*) AS n, SUM(verdict='AC') AS ac, "
+                          "MIN(CASE WHEN verdict='AC' THEN score END) AS best, MAX(created_at) AS last "
+                          "FROM submissions GROUP BY name, problem ORDER BY name, problem")
 
     def by_name(self, name):
         return self._rows("SELECT * FROM submissions WHERE name=? ORDER BY id", (name,))

@@ -46,23 +46,38 @@ python3 tools/selftest.py
 | `[server] allowed_networks` | 接続を許可するネットワーク (既定 `10.24.0.0/16, 127.0.0.0/8`) |
 | `[judge] backend` | `docker` (本番) / `local` (開発用。隔離なしでこのマシンの python で実行) |
 | `[judge] worker_cpus` | ワーカーを固定する CPU コア。個数がワーカー数 (既定 `2, 3`) |
-| `[judge] rate_limit_seconds` | 同じ名前で続けて提出できるまでの秒数 (既定 30) |
+| `[judge] problems` | 受け付ける問題のディレクトリ (既定 `problems/kdtree-nn, problems/nn-1d, problems/nn-2d-l1`) |
+| `[judge] rate_limit_seconds` | 同じ名前で続けて提出できるまでの秒数。問題をまたいで数える (既定 30) |
 
 変更したら `./start.sh` で再起動する。
 
+## 問題
+
+| ID | 内容 | 順位表 |
+|---|---|---|
+| `kdtree-nn` | D = 1〜10、ユークリッド距離の最近傍点 | 載る (スコア = スコア用ケースの時間の和) |
+| `nn-1d` | 練習: D = 1 の最近傍点 | 載らない (判定だけ返す。提出のカードには出る) |
+| `nn-2d-l1` | 練習: D = 2、マンハッタン距離の最近傍点 | 載らない (同上) |
+
+- 設定は `problems/<ID>/problem.json` (`ranked`, `dims`, `metric`, 制限時間など)。`ranked` が true の問題はちょうど 1 つ。
+- 練習問題は正誤判定用のケースだけ。想定解は O(N log N) で、N = 2×10^5 / D、Q = N の大きいケースを入れて全探索 O(NQ) が TLE になるようにしている。
+- 提出時に問題を省略すると `kdtree-nn` になる (古い `submit.py` もそのまま使える)。
+
 ## テストケース
 
-`problems/kdtree-nn/tests/` に生成する (`.gitignore` 済み)。`start.sh` が無ければ自動で生成する。作り直すとき:
+`problems/<ID>/tests/` に生成する (`.gitignore` 済み)。`start.sh` が無い問題の分を自動で生成する。作り直すとき:
 
 ```bash
 rm -rf problems/kdtree-nn/tests
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/problems/kdtree-nn:/p" -w /p kdjudge-sandbox pypy3 make_tests.py
 ./start.sh
+# 手で生成するなら:
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/problems:/problems" -w / kdjudge-sandbox \
+  pypy3 problems/lib/make_tests.py problems/kdtree-nn
 ```
 
-- 正解は参照解 (`reference.py`) で作り、全探索解 (`brute.py`) で検算する。
-- 入力の大きさ (N×D の上限) は `problems/kdtree-nn/problem.json` の `max_nd`。
-- スコア用ケースの Q は `problems/kdtree-nn/gen.py` の `SCORE_SPEC` (N に対する比率)。
+- 生成器は全問題で共通 (`problems/lib/`)。正解は参照解 (`reference.py`) で作り、全探索解 (`brute.py`) で検算する。
+- 入力の大きさ (N×D の上限) は各問題の `problem.json` の `max_nd`。
+- スコア用ケースの Q は `problems/lib/gen.py` の `SCORE_SPEC` (N に対する比率)。
   **ジャッジサーバで `tools/selftest.py` を実行し、ac の次元ごとの時間が各 0.3〜0.5 秒程度になるように調整する。**
 - テストケースを変えたら、`tools/rejudge.py --all-ac` で AC の提出を判定し直すと順位表がそろう。
 
@@ -71,7 +86,7 @@ docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/problems/kdtree-nn:/p" -w /p
 提出コードと判定結果は `submissions/<名前>/<提出ID>.py` と `.json` にある (`.gitignore` 済み)。
 
 ```bash
-tools/show.py              # 名前ごとの提出数・最良スコア
+tools/show.py              # 名前と問題ごとの提出数・AC 数・最良スコア
 tools/show.py alice        # alice の提出一覧
 tools/show.py alice 31     # 提出 31 のコードと判定結果
 tools/rejudge.py 31 32     # 判定し直す
@@ -92,7 +107,8 @@ judge/          ジャッジ本体 (python3 -m judge)
   db.py           SQLite (data/judge.db)
   leaderboard.py  順位表
 sandbox/        Dockerfile と runner.py (コンテナ内で実行・時間計測)
-problems/kdtree-nn/  問題設定・生成器・参照解・全探索解・validator
+problems/lib/        生成器・参照解・全探索解・validator (全問題で共通)
+problems/<ID>/       problem.json と生成したテストケース (tests/)
 tests/submissions/   selftest 用の提出
 tools/          selftest / show / rejudge / bench_size
 ```

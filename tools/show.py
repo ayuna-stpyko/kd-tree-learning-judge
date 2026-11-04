@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """提出を一覧・表示する (運営者用)。
 
-    tools/show.py              名前ごとの提出数・最良スコア
+    tools/show.py              名前と問題ごとの提出数・AC 数・最良スコア
     tools/show.py alice        alice の提出一覧
     tools/show.py alice 31     提出 31 のコードと判定結果
 """
@@ -23,25 +23,26 @@ def fmt_score(score):
 
 
 def show_names(db):
-    print("%-20s %6s %10s  %s" % ("名前", "提出数", "最良", "最終提出"))
+    print("%-20s %-10s %6s %5s %10s  %s" % ("名前", "問題", "提出数", "AC", "最良", "最終提出"))
     for r in db.summary_by_name():
-        print("%-20s %6d %10s  %s" % (r["name"], r["n"], fmt_score(r["best"]),
-                                      fmt_time(r["last"], SHORT_DATETIME_FMT)))
+        print("%-20s %-10s %6d %5d %10s  %s" % (r["name"], r["problem"], r["n"], r["ac"] or 0, fmt_score(r["best"]),
+                                                fmt_time(r["last"], SHORT_DATETIME_FMT)))
 
 
 def show_submissions(db, name):
     rows = db.by_name(name)
     if not rows:
         sys.exit("%s の提出はありません" % name)
-    print("%6s  %-15s %-8s %-4s %10s  %s" % ("ID", "時刻", "状態", "判定", "スコア", "失敗したケース"))
+    print("%6s  %-15s %-10s %-8s %-4s %10s  %s" % ("ID", "時刻", "問題", "状態", "判定", "スコア", "失敗したケース"))
     for r in rows:
         res = load_result(r)
         f = res.get("failed")
         where = "%s #%d (d=%d)" % (f["phase"], f["index"], f["d"]) if f else ""
         if res.get("message"):
             where += " " + res["message"]
-        print("%6d  %-15s %-8s %-4s %10s  %s" % (r["id"], fmt_time(r["created_at"], SHORT_DATETIME_FMT),
-                                                r["status"], r["verdict"] or "-", fmt_score(r["score"]), where))
+        print("%6d  %-15s %-10s %-8s %-4s %10s  %s" % (r["id"], fmt_time(r["created_at"], SHORT_DATETIME_FMT),
+                                                      r["problem"], r["status"], r["verdict"] or "-",
+                                                      fmt_score(r["score"]), where))
 
 
 def show_one(name, sid):

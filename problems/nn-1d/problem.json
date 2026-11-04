@@ -1,0 +1,11 @@
+{
+  "title": "練習: 1 次元の最近傍点",
+  "label": "1D",
+  "ranked": false,
+  "dims": [1],
+  "metric": "l2",
+  "time_limit_sec": 2.0,
+  "memory_limit_mb": 1024,
+  "output_limit_mb": 16,
+  "max_nd": 200000
+}

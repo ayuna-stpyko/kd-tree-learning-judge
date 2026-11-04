@@ -5,6 +5,7 @@
   2. 正誤判定用を順に実行 -> AC 以外が出たらそこで終了
   3. スコア用 d=1..10 を実行 -> AC 以外が出たらそこで終了
   4. 全部 AC -> スコア用の実行時間の和をスコアにする
+練習問題 (順位表に載らない問題) にはスコア用ケースが無いので、2 で全部 AC なら AC (スコアなし)。
 出力と正解の比較はコンテナの外 (ここ) で行い、計測時間には含めない。
 """
 import json
@@ -64,9 +65,8 @@ def classify(problem, ev, out_path, ans_path):
     return ("AC", None) if got == exp else ("WA", None)
 
 
-def prepare_workdir(cfg, sid, name):
+def prepare_workdir(cfg, problem, sid, name):
     """作業ディレクトリ (sub/main.py, cases/*.in, out/) を作る。正解ファイルは置かない。"""
-    problem = cfg.problem
     work = os.path.join(cfg.data_dir, "work", id_str(sid))
     shutil.rmtree(work, ignore_errors=True)
     for d in ("sub", "cases", "out"):
@@ -131,22 +131,26 @@ class Judgement:
                 "d": done + 1 if done < self.n[SCORE] else None}
 
     def complete(self):
-        """最後まで実行できたとき: 全部 AC ならスコアを付ける。"""
+        """最後まで実行できたとき: 全部 AC ならスコアを付ける (スコア用ケースが無い問題では付けない)。"""
         if sum(self.index.values()) == sum(self.n.values()):
             self.result["verdict"] = "AC"
-            self.result["score"] = round(sum(self.result["score_times"].values()), 4)
+            if self.n[SCORE]:
+                self.result["score"] = round(sum(self.result["score_times"].values()), 4)
             return True
         return False
 
 
 def judge(cfg, db, sub, cpu):
     sid = sub["id"]
-    problem = cfg.problem
-    work = prepare_workdir(cfg, sid, sub["name"])
+    problem = cfg.problems.get(sub["problem"])
+    if problem is None:
+        log.error("submission %d: 問題 %s は config.ini の problems にありません", sid, sub["problem"])
+        return {"verdict": "IE", "score": None, "message": "unknown problem"}
+    work = prepare_workdir(cfg, problem, sid, sub["name"])
     by_name = {c["name"]: c for c in problem.cases}
     j = Judgement(problem)
 
-    run = sandbox.start(cfg, work, [c["name"] for c in problem.cases], cpu, id_str(sid))
+    run = sandbox.start(cfg, problem, work, [c["name"] for c in problem.cases], cpu, id_str(sid))
     watchdog_fired = threading.Event()
 
     def on_watchdog():
@@ -197,7 +201,7 @@ def judge(cfg, db, sub, cpu):
 def save_result_file(cfg, row):
     """submissions/<名前>/<ID>.json に判定結果を書く (運営者が直接見る用)。"""
     result = load_result(row)
-    data = {"id": row["id"], "name": row["name"], "submitted_at": fmt_time(row["created_at"]),
+    data = {"id": row["id"], "name": row["name"], "problem": row["problem"], "submitted_at": fmt_time(row["created_at"]),
             "verdict": row["verdict"], "score": row["score"]}
     for k in ("message", "correctness", "score_times", "failed", "cases"):
         data[k] = result.get(k)
